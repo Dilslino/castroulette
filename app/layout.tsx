@@ -38,6 +38,7 @@ export const metadata: Metadata = {
     "fc:frame:button:3": "TIP",
     "fc:frame:button:4": "FOLLOW",
     "fc:frame:post_url": "/api/frame",
+    "base:app_id": "6967f1ef91006bd68cba53c9",
   },
 }
 
