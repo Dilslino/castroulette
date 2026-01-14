@@ -1,6 +1,6 @@
 "use client"
 
-import { Shuffle, Trophy, User } from "lucide-react"
+import { Home, Trophy, User } from "lucide-react"
 
 interface BottomNavProps {
   activeTab: "spin" | "leaderboard" | "profile"
@@ -12,7 +12,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     {
       id: "spin" as const,
       label: "Home",
-      icon: Shuffle,
+      icon: Home,
     },
     {
       id: "leaderboard" as const,
