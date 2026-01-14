@@ -1,5 +1,5 @@
 import { FrameUI } from "@/components/frame-ui"
-import { Suspense } from "react"
+import { ClientOnly } from "@/components/client-only"
 import type { Metadata, Viewport } from "next"
 
 export const viewport: Viewport = {
@@ -13,9 +13,9 @@ export const viewport: Viewport = {
 export default function HomePage() {
   return (
     <main className="min-h-dvh bg-background flex flex-col safe-area-inset">
-      <Suspense fallback={<FrameLoadingSkeleton />}>
+      <ClientOnly fallback={<FrameLoadingSkeleton />}>
         <FrameUI />
-      </Suspense>
+      </ClientOnly>
     </main>
   )
 }
