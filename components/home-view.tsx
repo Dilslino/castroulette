@@ -1,28 +1,55 @@
 "use client"
 
-import { Shuffle, Zap, Gift, TrendingUp, Clock, DollarSign, Users, Heart, BarChart3 } from "lucide-react"
+import { Shuffle, Zap, Gift, TrendingUp, Clock, DollarSign, Users, Heart, BarChart3, Check } from "lucide-react"
 import { useAppStore } from "@/lib/store"
 import { useFarcaster } from "@/lib/farcaster"
+import { useState, useEffect } from "react"
 
 interface HomeViewProps {
   onStartSpin: () => void
 }
 
 export function HomeView({ onStartSpin }: HomeViewProps) {
-  const { user: appUser } = useAppStore()
+  const { user: appUser, canClaimDaily, claimDailyReward, getTimeUntilNextClaim } = useAppStore()
   const { user: farcasterUser, hapticFeedback } = useFarcaster()
+  const [showClaimSuccess, setShowClaimSuccess] = useState(false)
+  const [timeUntilClaim, setTimeUntilClaim] = useState({ hours: 0, minutes: 0, seconds: 0 })
 
   const displayName = farcasterUser?.displayName || farcasterUser?.username || "friend"
+  const canClaim = canClaimDaily()
+
+  // Update countdown timer
+  useEffect(() => {
+    const updateTimer = () => {
+      setTimeUntilClaim(getTimeUntilNextClaim())
+    }
+
+    updateTimer()
+    const interval = setInterval(updateTimer, 1000)
+
+    return () => clearInterval(interval)
+  }, [getTimeUntilNextClaim])
+
+  const handleClaimDaily = () => {
+    const success = claimDailyReward()
+    if (success) {
+      hapticFeedback("heavy")
+      setShowClaimSuccess(true)
+      setTimeout(() => setShowClaimSuccess(false), 3000)
+    }
+  }
+
+  const formatTime = (time: { hours: number; minutes: number; seconds: number }) => {
+    const h = time.hours.toString().padStart(2, "0")
+    const m = time.minutes.toString().padStart(2, "0")
+    const s = time.seconds.toString().padStart(2, "0")
+    return `${h}:${m}:${s}`
+  }
 
   const todayStats = {
     spinsToday: 5,
     castsDiscovered: 5,
     tipsGiven: 1,
-  }
-
-  const dailyReward = {
-    claimed: false,
-    bonusSpins: 3,
   }
 
   const platformStats = {
@@ -110,7 +137,23 @@ export function HomeView({ onStartSpin }: HomeViewProps) {
       </div>
 
       {/* Daily Reward Banner */}
-      {!dailyReward.claimed && (
+      {showClaimSuccess ? (
+        <div className="bg-green-500/20 border-4 border-green-500 p-4 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-green-500 border-2 border-black flex items-center justify-center">
+              <Check className="h-6 w-6 text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="font-mono font-bold text-sm text-green-700">
+                CLAIMED!
+              </p>
+              <p className="font-mono text-xs text-foreground/70">
+                +3 bonus spins added
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : canClaim ? (
         <div className="bg-accent/20 border-4 border-accent border-dashed p-4 mb-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-accent border-2 border-black flex items-center justify-center animate-pulse">
@@ -121,12 +164,31 @@ export function HomeView({ onStartSpin }: HomeViewProps) {
                 DAILY DROP
               </p>
               <p className="font-mono text-xs text-foreground/70">
-                grab {dailyReward.bonusSpins} bonus spins free
+                grab 3 bonus spins free
               </p>
             </div>
-            <button className="px-3 py-2 bg-accent text-accent-foreground border-2 border-black font-mono font-bold text-xs shadow-[2px_2px_0px_0px_rgba(45,45,45,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]">
+            <button
+              onClick={handleClaimDaily}
+              className="px-3 py-2 bg-accent text-accent-foreground border-2 border-black font-mono font-bold text-xs shadow-[2px_2px_0px_0px_rgba(45,45,45,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+            >
               CLAIM
             </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-muted/50 border-4 border-muted p-4 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-muted border-2 border-black flex items-center justify-center">
+              <Clock className="h-6 w-6 text-foreground/50" />
+            </div>
+            <div className="flex-1">
+              <p className="font-mono font-bold text-sm text-foreground/50">
+                DAILY DROP
+              </p>
+              <p className="font-mono text-xs text-foreground/50">
+                next drop in {formatTime(timeUntilClaim)}
+              </p>
+            </div>
           </div>
         </div>
       )}

@@ -3,6 +3,10 @@ import { persist } from "zustand/middleware"
 import type { AppState, Cast, Payment } from "./types"
 import { mockCasts } from "./mock-data"
 
+// Daily reward constants
+const DAILY_BONUS_SPINS = 3
+const DAILY_RESET_HOURS = 24
+
 interface AppStore extends AppState {
   // Actions
   setUser: (user: Partial<AppState["user"]>) => void
@@ -10,6 +14,12 @@ interface AppStore extends AppState {
   addPayment: (payment: Payment) => void
   setReferralFid: (fid: number) => void
   setLanguage: (lang: "id" | "en") => void
+
+  // Daily reward
+  lastDailyClaimTime: string | null
+  claimDailyReward: () => boolean
+  canClaimDaily: () => boolean
+  getTimeUntilNextClaim: () => { hours: number; minutes: number; seconds: number }
 
   // Mock API functions (to be replaced with real API calls)
   getRandomCast: (includeSponsored?: boolean) => Promise<Cast>
@@ -32,6 +42,7 @@ export const useAppStore = create<AppStore>()(
       payments: [],
       language: "id",
       seenCastIds: [] as string[],
+      lastDailyClaimTime: null,
 
       // Actions
       setUser: (user) => set((state) => ({ user: { ...state.user, ...user } })),
@@ -39,6 +50,49 @@ export const useAppStore = create<AppStore>()(
       addPayment: (payment) => set((state) => ({ payments: [payment, ...state.payments] })),
       setReferralFid: (fid) => set({ referralFid: fid }),
       setLanguage: (lang) => set({ language: lang }),
+
+      // Daily reward functions
+      canClaimDaily: () => {
+        const { lastDailyClaimTime } = get()
+        if (!lastDailyClaimTime) return true
+
+        const lastClaim = new Date(lastDailyClaimTime)
+        const now = new Date()
+        const hoursSinceLastClaim = (now.getTime() - lastClaim.getTime()) / (1000 * 60 * 60)
+
+        return hoursSinceLastClaim >= DAILY_RESET_HOURS
+      },
+
+      claimDailyReward: () => {
+        const canClaim = get().canClaimDaily()
+        if (!canClaim) return false
+
+        set((state) => ({
+          user: {
+            ...state.user,
+            freeSpinsRemaining: state.user.freeSpinsRemaining + DAILY_BONUS_SPINS,
+          },
+          lastDailyClaimTime: new Date().toISOString(),
+        }))
+
+        return true
+      },
+
+      getTimeUntilNextClaim: () => {
+        const { lastDailyClaimTime } = get()
+        if (!lastDailyClaimTime) return { hours: 0, minutes: 0, seconds: 0 }
+
+        const lastClaim = new Date(lastDailyClaimTime)
+        const nextClaim = new Date(lastClaim.getTime() + DAILY_RESET_HOURS * 60 * 60 * 1000)
+        const now = new Date()
+
+        const diffMs = Math.max(0, nextClaim.getTime() - now.getTime())
+        const hours = Math.floor(diffMs / (1000 * 60 * 60))
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+        const seconds = Math.floor((diffMs % (1000 * 60)) / 1000)
+
+        return { hours, minutes, seconds }
+      },
 
       // Mock API functions
       getRandomCast: async (includeSponsored = true) => {
@@ -183,6 +237,7 @@ export const useAppStore = create<AppStore>()(
         language: state.language,
         referralFid: state.referralFid,
         seenCastIds: state.seenCastIds,
+        lastDailyClaimTime: state.lastDailyClaimTime,
       }),
     },
   ),
