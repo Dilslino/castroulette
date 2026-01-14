@@ -13,6 +13,7 @@ export interface Cast {
     recasts: number
     replies: number
   }
+  tags?: string[] // 1-3 topic tags like "Warpcast Update", "Crypto", "Art"
   createdAt: string
   sponsored?: boolean
   sponsorLabel?: string

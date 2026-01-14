@@ -86,7 +86,7 @@ export function CastCard({ cast }: CastCardProps) {
       </div>
 
       {/* Metrics */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
           onClick={openCast}
@@ -115,6 +115,20 @@ export function CastCard({ cast }: CastCardProps) {
           <span className="font-bold text-sm text-primary-foreground">{cast.metrics.replies.toLocaleString()}</span>
         </button>
       </div>
+
+      {/* Tags */}
+      {cast.tags && cast.tags.length > 0 && (
+        <div className="mt-3 pt-3 border-t-2 border-black flex flex-wrap gap-2">
+          {cast.tags.slice(0, 3).map((tag, index) => (
+            <span
+              key={index}
+              className="font-mono font-bold text-xs text-foreground/80 bg-muted px-2 py-1 border-2 border-black"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Sponsor Label */}
       {cast.sponsored && cast.sponsorLabel && (
