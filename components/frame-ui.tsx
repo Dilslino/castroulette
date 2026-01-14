@@ -5,6 +5,7 @@ import { useAppStore } from "@/lib/store"
 import { CastCard } from "./cast-card"
 import { SpinControls } from "./spin-controls"
 import { PaymentModal } from "./payment-modal"
+import { SpinPurchaseModal } from "./spin-purchase-modal"
 import { BottomNav } from "./bottom-nav"
 import { MobileHeader, SideMenu } from "./mobile-header"
 import { HomeView } from "./home-view"
@@ -16,23 +17,23 @@ import { AlertCircle, ArrowLeft } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
 export function FrameUI() {
-  const { user, currentCast, setCurrentCast, getRandomCast, spinFree, rerollPaid, tipPaid } = useAppStore()
+  const { user, currentCast, setCurrentCast, getRandomCast, spinFree, tipPaid, setUser } = useAppStore()
 
   const [activeTab, setActiveTab] = useState<"spin" | "leaderboard" | "profile">("spin")
   const [isSpinMode, setIsSpinMode] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSpinning, setIsSpinning] = useState(false)
-  const [isRerolling, setIsRerolling] = useState(false)
   const [isTipping, setIsTipping] = useState(false)
+  const [isSpinPurchaseOpen, setIsSpinPurchaseOpen] = useState(false)
   const [paymentModal, setPaymentModal] = useState<{
     isOpen: boolean
-    type: "reroll" | "tip"
+    type: "tip"
     amount: number
     description: string
   }>({
     isOpen: false,
-    type: "reroll",
+    type: "tip",
     amount: 0,
     description: "",
   })
@@ -67,12 +68,22 @@ export function FrameUI() {
     }
   }
 
-  const handleReroll = () => {
-    setPaymentModal({
-      isOpen: true,
-      type: "reroll",
-      amount: 0.05,
-      description: "get a fresh random cast",
+  const handleBuySpins = () => {
+    setIsSpinPurchaseOpen(true)
+  }
+
+  const handleSpinPurchase = async (spins: number, price: number) => {
+    // Simulate payment processing
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+
+    // Add spins to user
+    setUser({
+      freeSpinsRemaining: user.freeSpinsRemaining + spins,
+    })
+
+    toast({
+      title: "purchased!",
+      description: `+${spins} spins added`,
     })
   }
 
@@ -95,50 +106,28 @@ export function FrameUI() {
   }
 
   const handlePaymentConfirm = async () => {
-    const { type, amount } = paymentModal
+    const { amount } = paymentModal
 
-    if (type === "reroll") {
-      setIsRerolling(true)
-      try {
-        const newCast = await rerollPaid({ amountUSDC: amount })
-        setCurrentCast(newCast)
-        setPaymentModal({ ...paymentModal, isOpen: false })
+    setIsTipping(true)
+    try {
+      await tipPaid({
+        toWallet: `@${currentCast?.author.handle}`,
+        amountUSDC: amount,
+      })
+      setPaymentModal({ ...paymentModal, isOpen: false })
 
-        toast({
-          title: "done!",
-          description: "here's your new cast",
-        })
-      } catch (err) {
-        toast({
-          title: "oops",
-          description: "reroll failed",
-          variant: "destructive",
-        })
-      } finally {
-        setIsRerolling(false)
-      }
-    } else if (type === "tip") {
-      setIsTipping(true)
-      try {
-        await tipPaid({
-          toWallet: `@${currentCast?.author.handle}`,
-          amountUSDC: amount,
-        })
-        setPaymentModal({ ...paymentModal, isOpen: false })
-
-        toast({
-          title: "sent!",
-          description: `tip delivered to @${currentCast?.author.handle}`,
-        })
-      } catch (err) {
-        toast({
-          title: "oops",
-          description: "tip didn't go through",
-          variant: "destructive",
-        })
-      } finally {
-        setIsTipping(false)
-      }
+      toast({
+        title: "sent!",
+        description: `tip delivered to @${currentCast?.author.handle}`,
+      })
+    } catch (err) {
+      toast({
+        title: "oops",
+        description: "tip didn't go through",
+        variant: "destructive",
+      })
+    } finally {
+      setIsTipping(false)
     }
   }
 
@@ -241,10 +230,9 @@ export function FrameUI() {
           <SpinControls
             freeSpinsRemaining={user.freeSpinsRemaining}
             isSpinning={isSpinning}
-            isRerolling={isRerolling}
             isTipping={isTipping}
             onSpin={handleSpin}
-            onReroll={handleReroll}
+            onBuySpins={handleBuySpins}
             onTip={handleTip}
             onFollow={handleFollow}
             disabled={!currentCast}
@@ -275,10 +263,17 @@ export function FrameUI() {
         isOpen={paymentModal.isOpen}
         onClose={() => setPaymentModal({ ...paymentModal, isOpen: false })}
         onConfirm={handlePaymentConfirm}
-        isProcessing={isRerolling || isTipping}
+        isProcessing={isTipping}
         type={paymentModal.type}
         amount={paymentModal.amount}
         description={paymentModal.description}
+      />
+
+      {/* Spin Purchase Modal */}
+      <SpinPurchaseModal
+        isOpen={isSpinPurchaseOpen}
+        onClose={() => setIsSpinPurchaseOpen(false)}
+        onPurchase={handleSpinPurchase}
       />
 
       {/* Bottom Navigation */}
