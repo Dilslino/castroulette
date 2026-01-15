@@ -1,6 +1,6 @@
 "use client"
 
-import { Shuffle, Zap, Gift, TrendingUp, Clock, DollarSign, Users, Heart, BarChart3, Check } from "lucide-react"
+import { Shuffle, Zap, Gift, TrendingUp, DollarSign, Users, Heart, BarChart3, Check, Clock } from "lucide-react"
 import { useAppStore } from "@/lib/store"
 import { useFarcaster } from "@/lib/farcaster"
 import { useState, useEffect } from "react"
@@ -74,7 +74,7 @@ export function HomeView({ onStartSpin }: HomeViewProps) {
         </p>
       </div>
 
-      {/* Free Spins Card */}
+      {/* Spins Card */}
       <div className="bg-card border-4 border-black shadow-[4px_4px_0px_0px_rgba(45,45,45,1)] p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -83,31 +83,38 @@ export function HomeView({ onStartSpin }: HomeViewProps) {
             </div>
             <div>
               <p className="font-mono text-xs text-foreground/60">
-                free spins left
+                spins available
               </p>
-              <p className="font-mono font-bold text-2xl">{appUser.freeSpinsRemaining}</p>
+              <p className="font-mono font-bold text-2xl">{appUser.freeSpinsRemaining + appUser.purchasedSpins}</p>
             </div>
           </div>
           <div className="text-right">
-            <p className="font-mono text-[10px] text-foreground/50">
-              resets in
-            </p>
-            <div className="flex items-center gap-1">
-              <Clock className="h-3 w-3 text-foreground/50" />
-              <span className="font-mono font-bold text-sm">23:45:12</span>
+            <div className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] text-foreground/50 flex items-center gap-1 justify-end">
+                <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                free: {appUser.freeSpinsRemaining}
+              </span>
+              <span className="font-mono text-[10px] text-foreground/50 flex items-center gap-1 justify-end">
+                <span className="w-2 h-2 rounded-full bg-primary"></span>
+                purchased: {appUser.purchasedSpins}
+              </span>
             </div>
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="w-full h-3 bg-muted border-2 border-black mb-2">
+        <div className="w-full h-3 bg-muted border-2 border-black mb-2 overflow-hidden flex">
+          <div
+            className="h-full bg-green-500 transition-all duration-300"
+            style={{ width: `${(appUser.freeSpinsRemaining / (appUser.freeSpinsRemaining + appUser.purchasedSpins + 1)) * 100}%` }}
+          />
           <div
             className="h-full bg-primary transition-all duration-300"
-            style={{ width: `${(appUser.freeSpinsRemaining / 10) * 100}%` }}
+            style={{ width: `${(appUser.purchasedSpins / (appUser.freeSpinsRemaining + appUser.purchasedSpins + 1)) * 100}%` }}
           />
         </div>
         <p className="font-mono text-[10px] text-foreground/50 text-center">
-          {appUser.freeSpinsRemaining}/10 spins ready
+          {appUser.freeSpinsRemaining + appUser.purchasedSpins} total spins ready
         </p>
       </div>
 

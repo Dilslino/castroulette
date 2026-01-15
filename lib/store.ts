@@ -36,6 +36,7 @@ export const useAppStore = create<AppStore>()(
       // Initial state
       user: {
         freeSpinsRemaining: 5,
+        purchasedSpins: 0,
         isConnected: false,
       },
       currentCast: null,

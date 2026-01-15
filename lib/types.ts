@@ -23,6 +23,7 @@ export interface User {
   fid?: number
   wallet?: string
   freeSpinsRemaining: number
+  purchasedSpins: number
   isConnected: boolean
 }
 

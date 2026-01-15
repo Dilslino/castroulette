@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Menu, X, Wallet, LogOut, Settings, User, Copy, Check } from "lucide-react"
+import { X, Wallet, Settings, User, Copy, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useFarcaster } from "@/lib/farcaster"
 
@@ -26,27 +26,18 @@ export function MobileHeader({ onMenuOpen }: MobileHeaderProps) {
 
   return (
     <header className="flex items-center justify-between px-4 py-3 bg-card border-b-4 border-black">
-      {/* Logo & Menu */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={onMenuOpen}
-          className="p-2 touch-target active:bg-muted border-2 border-black"
-          aria-label="open menu"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-        <div className="flex items-center gap-2">
-          <img
-            src="/logo.png"
-            alt="CastRoulette"
-            className="w-8 h-8 pointer-events-none select-none"
-            draggable={false}
-            onContextMenu={(e) => e.preventDefault()}
-          />
-          <span className="font-mono font-black text-sm tracking-tight hidden sm:inline">
-            CASTROULETTE
-          </span>
-        </div>
+      {/* Logo */}
+      <div className="flex items-center gap-2">
+        <img
+          src="/logo.png"
+          alt="CastRoulette"
+          className="w-8 h-8 pointer-events-none select-none"
+          draggable={false}
+          onContextMenu={(e) => e.preventDefault()}
+        />
+        <span className="font-mono font-black text-sm tracking-tight">
+          CASTROULETTE
+        </span>
       </div>
 
       {/* User Badge */}
