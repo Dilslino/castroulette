@@ -1,150 +1,134 @@
 import { NextResponse } from "next/server"
 
-const NEYNAR_API_KEY = process.env.NEYNAR_API_KEY || ""
-const NEYNAR_API_URL = "https://api.neynar.com/v2"
+// Public Farcaster Hub endpoints
+const HUB_URL = "https://hub.pinata.cloud"
 
-// Minimum likes for a cast to be considered quality
-const MIN_LIKES = 10
-
-interface NeynarCast {
-  hash: string
-  author: {
+interface HubCast {
+  data: {
+    type: string
     fid: number
-    username: string
-    display_name: string
-    pfp_url: string
+    timestamp: number
+    castAddBody?: {
+      text: string
+      embeds?: Array<{ url?: string }>
+      embedsDeprecated?: string[]
+      parentCastId?: { fid: number; hash: string }
+      parentUrl?: string
+    }
   }
-  text: string
-  timestamp: string
-  reactions: {
-    likes_count: number
-    recasts_count: number
-  }
-  replies: {
-    count: number
-  }
-  embeds?: Array<{
-    url?: string
-    metadata?: {
-      content_type?: string
-      image?: {
-        url?: string
+  hash: string
+}
+
+interface HubReaction {
+  data: {
+    type: string
+    fid: number
+    reactionBody: {
+      type: number // 1 = like, 2 = recast
+      targetCastId: {
+        fid: number
+        hash: string
       }
     }
-  }>
-}
-
-interface NeynarFeedResponse {
-  casts: NeynarCast[]
-  next?: {
-    cursor?: string
   }
 }
 
-// Get random quality casts from Neynar
-async function fetchQualityCasts(
-  excludeHashes: string[],
-  limit: number = 50
-): Promise<NeynarCast[]> {
-  if (!NEYNAR_API_KEY) {
-    throw new Error("NEYNAR_API_KEY not configured")
-  }
+interface UserData {
+  fid: number
+  username: string
+  displayName: string
+  pfp: string
+}
 
-  const allCasts: NeynarCast[] = []
-  let cursor: string | undefined = undefined
-  let attempts = 0
-  const maxAttempts = 5
+// Get user data from hub
+async function getUserData(fid: number): Promise<UserData | null> {
+  try {
+    const [usernameRes, displayRes, pfpRes] = await Promise.all([
+      fetch(`${HUB_URL}/v1/userDataByFid?fid=${fid}&user_data_type=6`), // username
+      fetch(`${HUB_URL}/v1/userDataByFid?fid=${fid}&user_data_type=2`), // display name
+      fetch(`${HUB_URL}/v1/userDataByFid?fid=${fid}&user_data_type=1`), // pfp
+    ])
 
-  // Fetch multiple pages to get more variety
-  while (allCasts.length < limit && attempts < maxAttempts) {
-    attempts++
+    const username = usernameRes.ok ? await usernameRes.json() : null
+    const display = displayRes.ok ? await displayRes.json() : null
+    const pfp = pfpRes.ok ? await pfpRes.json() : null
 
-    // Use trending feed for quality discovery
-    const url = new URL(`${NEYNAR_API_URL}/farcaster/feed/trending`)
-    url.searchParams.set("limit", "100")
-    url.searchParams.set("time_window", "24h")
-    if (cursor) {
-      url.searchParams.set("cursor", cursor)
+    return {
+      fid,
+      username: username?.data?.userDataBody?.value || `user${fid}`,
+      displayName: display?.data?.userDataBody?.value || `User ${fid}`,
+      pfp: pfp?.data?.userDataBody?.value || "",
     }
-
-    const response = await fetch(url.toString(), {
-      headers: {
-        accept: "application/json",
-        api_key: NEYNAR_API_KEY,
-      },
-      next: { revalidate: 60 }, // Cache for 1 minute
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      console.error("Neynar API error:", error)
-      throw new Error(`Neynar API error: ${response.status}`)
-    }
-
-    const data: NeynarFeedResponse = await response.json()
-
-    // Filter for quality casts
-    const qualityCasts = data.casts.filter((cast) => {
-      // Must have minimum likes
-      if (cast.reactions.likes_count < MIN_LIKES) return false
-
-      // Must not be in excluded list
-      if (excludeHashes.includes(cast.hash)) return false
-
-      // Must have actual text content
-      if (!cast.text || cast.text.trim().length < 10) return false
-
-      return true
-    })
-
-    allCasts.push(...qualityCasts)
-
-    // Get next cursor
-    cursor = data.next?.cursor
-    if (!cursor) break
+  } catch {
+    return null
   }
-
-  // Shuffle for randomness
-  return shuffleArray(allCasts).slice(0, limit)
 }
 
-// Also fetch from recent global feed for variety
-async function fetchRecentCasts(
-  excludeHashes: string[],
-  limit: number = 50
-): Promise<NeynarCast[]> {
-  if (!NEYNAR_API_KEY) {
-    throw new Error("NEYNAR_API_KEY not configured")
+// Get reaction count for a cast
+async function getReactionCount(fid: number, hash: string): Promise<{ likes: number; recasts: number }> {
+  try {
+    const [likesRes, recastsRes] = await Promise.all([
+      fetch(`${HUB_URL}/v1/reactionsByCast?target_fid=${fid}&target_hash=${hash}&reaction_type=1`),
+      fetch(`${HUB_URL}/v1/reactionsByCast?target_fid=${fid}&target_hash=${hash}&reaction_type=2`),
+    ])
+
+    const likesData = likesRes.ok ? await likesRes.json() : { messages: [] }
+    const recastsData = recastsRes.ok ? await recastsRes.json() : { messages: [] }
+
+    return {
+      likes: likesData.messages?.length || 0,
+      recasts: recastsData.messages?.length || 0,
+    }
+  } catch {
+    return { likes: 0, recasts: 0 }
   }
+}
 
-  const url = new URL(`${NEYNAR_API_URL}/farcaster/feed`)
-  url.searchParams.set("feed_type", "filter")
-  url.searchParams.set("filter_type", "global_trending")
-  url.searchParams.set("limit", "100")
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      accept: "application/json",
-      api_key: NEYNAR_API_KEY,
-    },
-    next: { revalidate: 60 },
-  })
-
-  if (!response.ok) {
+// Get casts from a specific FID
+async function getCastsByFid(fid: number, limit: number = 20): Promise<HubCast[]> {
+  try {
+    const res = await fetch(`${HUB_URL}/v1/castsByFid?fid=${fid}&pageSize=${limit}&reverse=1`)
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.messages || []
+  } catch {
     return []
   }
-
-  const data: NeynarFeedResponse = await response.json()
-
-  const qualityCasts = data.casts.filter((cast) => {
-    if (cast.reactions.likes_count < MIN_LIKES) return false
-    if (excludeHashes.includes(cast.hash)) return false
-    if (!cast.text || cast.text.trim().length < 10) return false
-    return true
-  })
-
-  return shuffleArray(qualityCasts).slice(0, limit)
 }
+
+// Popular/Active FIDs to sample from (mix of creators)
+const SAMPLE_FIDS = [
+  3, // dwr (Dan Romero)
+  2, // v (Varun)
+  5650, // jesse
+  194, // cassie
+  239, // ted
+  1325, // colin
+  7143, // 0xdesigner
+  12142, // pugson
+  8685, // nonlinear
+  616, // ace
+  2433, // jayme
+  1317, // matthew
+  3621, // yb
+  4085, // giu
+  5253, // greg
+  6806, // phil
+  7963, // adam
+  8447, // evan
+  9152, // alex
+  10636, // mike
+  12026, // sophia
+  15218, // crypto
+  18949, // web3
+  20396, // nft
+  25178, // builder
+  30452, // dev
+  35789, // art
+  40123, // music
+  45678, // gaming
+  50234, // meme
+]
 
 function shuffleArray<T>(array: T[]): T[] {
   const shuffled = [...array]
@@ -155,13 +139,10 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled
 }
 
-function extractImageFromCast(cast: NeynarCast): string | undefined {
-  if (!cast.embeds) return undefined
+function extractImageFromCast(cast: HubCast): string | undefined {
+  const embeds = cast.data.castAddBody?.embeds || []
 
-  for (const embed of cast.embeds) {
-    if (embed.metadata?.image?.url) {
-      return embed.metadata.image.url
-    }
+  for (const embed of embeds) {
     if (embed.url && /\.(jpg|jpeg|png|gif|webp)$/i.test(embed.url)) {
       return embed.url
     }
@@ -170,92 +151,126 @@ function extractImageFromCast(cast: NeynarCast): string | undefined {
   return undefined
 }
 
-function generateTags(cast: NeynarCast): string[] {
+function generateTags(text: string, likes: number): string[] {
   const tags: string[] = []
-  const text = cast.text.toLowerCase()
+  const lowerText = text.toLowerCase()
 
-  // Detect common topics
-  if (text.includes("$") || text.includes("crypto") || text.includes("eth") || text.includes("bitcoin")) {
+  if (lowerText.includes("$") || lowerText.includes("crypto") || lowerText.includes("eth")) {
     tags.push("Crypto")
   }
-  if (text.includes("art") || text.includes("nft") || text.includes("🎨")) {
+  if (lowerText.includes("art") || lowerText.includes("nft") || lowerText.includes("🎨")) {
     tags.push("Art")
   }
-  if (text.includes("dev") || text.includes("code") || text.includes("build")) {
+  if (lowerText.includes("dev") || lowerText.includes("code") || lowerText.includes("build")) {
     tags.push("Dev")
   }
-  if (text.includes("farcaster") || text.includes("warpcast")) {
+  if (lowerText.includes("farcaster") || lowerText.includes("warpcast")) {
     tags.push("Farcaster")
   }
-  if (text.includes("meme") || text.includes("lol") || text.includes("😂")) {
-    tags.push("Meme")
-  }
-  if (text.includes("music") || text.includes("🎵") || text.includes("song")) {
-    tags.push("Music")
-  }
-  if (text.includes("gm") || text.includes("good morning")) {
+  if (lowerText.includes("gm") || lowerText.includes("good morning")) {
     tags.push("GM")
   }
-  if (cast.reactions.likes_count >= 100) {
+  if (likes >= 50) {
     tags.push("🔥 Hot")
   }
 
-  // Limit to 3 tags
   return tags.slice(0, 3)
+}
+
+function hashToHex(hash: string): string {
+  // If already hex string, return as is
+  if (hash.startsWith("0x")) return hash
+  // Convert base64 or other format to hex
+  try {
+    const buffer = Buffer.from(hash, "base64")
+    return "0x" + buffer.toString("hex")
+  } catch {
+    return hash
+  }
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const excludeHashesParam = searchParams.get("exclude") || ""
-    const excludeHashes = excludeHashesParam ? excludeHashesParam.split(",") : []
+    const excludeHashes = new Set(excludeHashesParam ? excludeHashesParam.split(",") : [])
 
-    // Fetch from both trending and recent feeds
-    const [trendingCasts, recentCasts] = await Promise.all([
-      fetchQualityCasts(excludeHashes, 30),
-      fetchRecentCasts(excludeHashes, 20),
-    ])
+    // Randomly select FIDs to fetch from
+    const selectedFids = shuffleArray(SAMPLE_FIDS).slice(0, 10)
 
-    // Combine and shuffle
-    const allCasts = shuffleArray([...trendingCasts, ...recentCasts])
+    // Fetch casts from selected FIDs in parallel
+    const castsPromises = selectedFids.map((fid) => getCastsByFid(fid, 10))
+    const castsResults = await Promise.all(castsPromises)
 
-    // Remove duplicates by hash
-    const seen = new Set<string>()
-    const uniqueCasts = allCasts.filter((cast) => {
-      if (seen.has(cast.hash)) return false
-      seen.add(cast.hash)
-      return true
-    })
+    // Flatten and filter casts
+    const allCasts: HubCast[] = castsResults
+      .flat()
+      .filter((cast) => {
+        // Must have text content
+        const text = cast.data.castAddBody?.text || ""
+        if (text.length < 10) return false
 
-    // Take just one random cast
-    const selectedCast = uniqueCasts[0]
+        // Must not be a reply
+        if (cast.data.castAddBody?.parentCastId) return false
 
-    if (!selectedCast) {
-      return NextResponse.json(
-        { error: "No quality casts available" },
-        { status: 404 }
-      )
+        // Must not be already seen
+        const hashHex = hashToHex(cast.hash)
+        if (excludeHashes.has(hashHex) || excludeHashes.has(cast.hash)) return false
+
+        return true
+      })
+
+    if (allCasts.length === 0) {
+      return NextResponse.json({ error: "No casts available" }, { status: 404 })
     }
 
-    // Transform to our format
+    // Shuffle and pick random casts to check reactions
+    const shuffledCasts = shuffleArray(allCasts).slice(0, 20)
+
+    // Get reaction counts for top candidates
+    const castsWithReactions = await Promise.all(
+      shuffledCasts.map(async (cast) => {
+        const reactions = await getReactionCount(cast.data.fid, cast.hash)
+        return { cast, reactions }
+      })
+    )
+
+    // Filter by minimum likes (10)
+    const qualityCasts = castsWithReactions.filter((c) => c.reactions.likes >= 10)
+
+    // If no quality casts, take the one with most likes
+    let selected = qualityCasts[0]
+    if (!selected) {
+      selected = castsWithReactions.sort((a, b) => b.reactions.likes - a.reactions.likes)[0]
+    }
+
+    if (!selected) {
+      return NextResponse.json({ error: "No quality casts found" }, { status: 404 })
+    }
+
+    // Get user data
+    const userData = await getUserData(selected.cast.data.fid)
+
+    const text = selected.cast.data.castAddBody?.text || ""
+    const hashHex = hashToHex(selected.cast.hash)
+
     const cast = {
-      id: selectedCast.hash,
+      id: hashHex,
       author: {
-        fid: selectedCast.author.fid,
-        handle: selectedCast.author.username,
-        displayName: selectedCast.author.display_name,
-        avatar: selectedCast.author.pfp_url,
+        fid: selected.cast.data.fid,
+        handle: userData?.username || `user${selected.cast.data.fid}`,
+        avatar: userData?.pfp || "",
       },
-      text: selectedCast.text,
-      image: extractImageFromCast(selectedCast),
-      uri: `https://warpcast.com/${selectedCast.author.username}/${selectedCast.hash.slice(0, 10)}`,
+      text,
+      image: extractImageFromCast(selected.cast),
+      uri: `https://warpcast.com/${userData?.username || "user"}/${hashHex.slice(0, 10)}`,
       metrics: {
-        likes: selectedCast.reactions.likes_count,
-        recasts: selectedCast.reactions.recasts_count,
-        replies: selectedCast.replies.count,
+        likes: selected.reactions.likes,
+        recasts: selected.reactions.recasts,
+        replies: 0,
       },
-      tags: generateTags(selectedCast),
-      createdAt: selectedCast.timestamp,
+      tags: generateTags(text, selected.reactions.likes),
+      createdAt: new Date(selected.cast.data.timestamp * 1000).toISOString(),
     }
 
     return NextResponse.json({ cast })
@@ -269,52 +284,80 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  // Same as GET but allows body for more complex exclude lists
   try {
     const body = await request.json()
-    const excludeHashes: string[] = body.excludeHashes || []
+    const excludeHashes = new Set<string>(body.excludeHashes || [])
 
-    const [trendingCasts, recentCasts] = await Promise.all([
-      fetchQualityCasts(excludeHashes, 30),
-      fetchRecentCasts(excludeHashes, 20),
-    ])
+    // Randomly select FIDs to fetch from
+    const selectedFids = shuffleArray(SAMPLE_FIDS).slice(0, 10)
 
-    const allCasts = shuffleArray([...trendingCasts, ...recentCasts])
+    // Fetch casts from selected FIDs in parallel
+    const castsPromises = selectedFids.map((fid) => getCastsByFid(fid, 10))
+    const castsResults = await Promise.all(castsPromises)
 
-    const seen = new Set<string>()
-    const uniqueCasts = allCasts.filter((cast) => {
-      if (seen.has(cast.hash)) return false
-      seen.add(cast.hash)
-      return true
-    })
+    // Flatten and filter casts
+    const allCasts: HubCast[] = castsResults
+      .flat()
+      .filter((cast) => {
+        const text = cast.data.castAddBody?.text || ""
+        if (text.length < 10) return false
+        if (cast.data.castAddBody?.parentCastId) return false
 
-    const selectedCast = uniqueCasts[0]
+        const hashHex = hashToHex(cast.hash)
+        if (excludeHashes.has(hashHex) || excludeHashes.has(cast.hash)) return false
 
-    if (!selectedCast) {
-      return NextResponse.json(
-        { error: "No quality casts available" },
-        { status: 404 }
-      )
+        return true
+      })
+
+    if (allCasts.length === 0) {
+      return NextResponse.json({ error: "No casts available" }, { status: 404 })
     }
 
+    // Shuffle and pick random casts to check reactions
+    const shuffledCasts = shuffleArray(allCasts).slice(0, 20)
+
+    // Get reaction counts
+    const castsWithReactions = await Promise.all(
+      shuffledCasts.map(async (cast) => {
+        const reactions = await getReactionCount(cast.data.fid, cast.hash)
+        return { cast, reactions }
+      })
+    )
+
+    // Filter by minimum likes (10)
+    const qualityCasts = castsWithReactions.filter((c) => c.reactions.likes >= 10)
+
+    let selected = qualityCasts[0]
+    if (!selected) {
+      selected = castsWithReactions.sort((a, b) => b.reactions.likes - a.reactions.likes)[0]
+    }
+
+    if (!selected) {
+      return NextResponse.json({ error: "No quality casts found" }, { status: 404 })
+    }
+
+    const userData = await getUserData(selected.cast.data.fid)
+
+    const text = selected.cast.data.castAddBody?.text || ""
+    const hashHex = hashToHex(selected.cast.hash)
+
     const cast = {
-      id: selectedCast.hash,
+      id: hashHex,
       author: {
-        fid: selectedCast.author.fid,
-        handle: selectedCast.author.username,
-        displayName: selectedCast.author.display_name,
-        avatar: selectedCast.author.pfp_url,
+        fid: selected.cast.data.fid,
+        handle: userData?.username || `user${selected.cast.data.fid}`,
+        avatar: userData?.pfp || "",
       },
-      text: selectedCast.text,
-      image: extractImageFromCast(selectedCast),
-      uri: `https://warpcast.com/${selectedCast.author.username}/${selectedCast.hash.slice(0, 10)}`,
+      text,
+      image: extractImageFromCast(selected.cast),
+      uri: `https://warpcast.com/${userData?.username || "user"}/${hashHex.slice(0, 10)}`,
       metrics: {
-        likes: selectedCast.reactions.likes_count,
-        recasts: selectedCast.reactions.recasts_count,
-        replies: selectedCast.replies.count,
+        likes: selected.reactions.likes,
+        recasts: selected.reactions.recasts,
+        replies: 0,
       },
-      tags: generateTags(selectedCast),
-      createdAt: selectedCast.timestamp,
+      tags: generateTags(text, selected.reactions.likes),
+      createdAt: new Date(selected.cast.data.timestamp * 1000).toISOString(),
     }
 
     return NextResponse.json({ cast })
