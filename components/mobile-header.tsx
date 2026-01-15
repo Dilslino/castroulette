@@ -39,7 +39,9 @@ export function MobileHeader({ onMenuOpen }: MobileHeaderProps) {
           <img
             src="/logo.png"
             alt="CastRoulette"
-            className="w-8 h-8"
+            className="w-8 h-8 pointer-events-none select-none"
+            draggable={false}
+            onContextMenu={(e) => e.preventDefault()}
           />
           <span className="font-mono font-black text-sm tracking-tight hidden sm:inline">
             CASTROULETTE
@@ -138,7 +140,9 @@ export function SideMenu({ isOpen, onClose }: SideMenuProps) {
             <img
               src="/logo.png"
               alt="CastRoulette"
-              className="w-7 h-7"
+              className="w-7 h-7 pointer-events-none select-none"
+              draggable={false}
+              onContextMenu={(e) => e.preventDefault()}
             />
             <span className="font-mono font-bold text-lg text-primary-foreground">
               MENU
