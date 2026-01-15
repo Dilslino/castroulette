@@ -15,7 +15,6 @@ import { LanguageSwitcher } from "@/components/language-switcher"
 import { StatCard } from "@/components/stat-card"
 import { useAppStore } from "@/lib/store"
 import { t } from "@/lib/i18n"
-import { mockCasts } from "@/lib/mock-data"
 import { BarChart3, DollarSign, Heart, Shuffle, ArrowLeft, Wallet, Save, TrendingUp } from "lucide-react"
 import Link from "next/link"
 
@@ -31,8 +30,8 @@ export default function DashboardPage() {
   const [creatorWallet, setCreatorWallet] = useState("")
   const [isSaving, setIsSaving] = useState(false)
 
-  // Mock recent results (last 10 spins)
-  const recentResults = mockCasts.slice(0, 5)
+  // Empty results - will be populated from API later
+  const recentResults: any[] = []
 
   useEffect(() => {
     const loadMetrics = async () => {

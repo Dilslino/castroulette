@@ -11,14 +11,17 @@ import { WalletBadge } from "@/components/wallet-badge"
 import { LanguageSwitcher } from "@/components/language-switcher"
 import { StatCard } from "@/components/stat-card"
 import { useAppStore } from "@/lib/store"
-import { mockSponsorSlots } from "@/lib/mock-data"
 import { t } from "@/lib/i18n"
 import { toast } from "@/hooks/use-toast"
 import { ArrowLeft, TrendingUp, Eye, DollarSign, Target, Sparkles } from "lucide-react"
 import Link from "next/link"
+import type { SponsorSlot } from "@/lib/types"
+
+// Empty sponsor slots - will be populated from API later
+const emptySponsorSlots: SponsorSlot[] = []
 
 export default function SponsorPage() {
-  const { language, createSponsor } = useAppStore()
+  const { language } = useAppStore()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [paymentModal, setPaymentModal] = useState<{
     isOpen: boolean
@@ -54,7 +57,8 @@ export default function SponsorPage() {
 
     setIsSubmitting(true)
     try {
-      await createSponsor(paymentModal.data)
+      // Mock sponsor creation - will be replaced with real API
+      await new Promise((resolve) => setTimeout(resolve, 1000))
       setPaymentModal({ isOpen: false, data: null })
 
       toast({
@@ -167,7 +171,7 @@ export default function SponsorPage() {
               </CardHeader>
               <CardContent>
                 <CampaignsTable
-                  campaigns={mockSponsorSlots}
+                  campaigns={emptySponsorSlots}
                   language={language}
                   onEdit={(campaign) => {
                     toast({
