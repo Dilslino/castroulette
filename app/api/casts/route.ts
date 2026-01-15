@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 
-// Public Farcaster Hub endpoints
-const HUB_URL = "https://hub.pinata.cloud"
+// Multiple Hub endpoints for fallback
+const HUB_URLS = [
+  "https://hub.pinata.cloud",
+  "https://nemes.farcaster.xyz:2281",
+]
 
 interface HubCast {
   data: {
@@ -22,69 +25,67 @@ interface HubCast {
 interface UserData {
   fid: number
   username: string
-  displayName: string
   pfp: string
 }
 
-// Cache for user data
-const userCache = new Map<number, UserData>()
+// Try fetching from multiple hubs
+async function fetchFromHub(path: string): Promise<any> {
+  for (const hubUrl of HUB_URLS) {
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+      const res = await fetch(`${hubUrl}${path}`, {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+        },
+      })
+
+      clearTimeout(timeoutId)
+
+      if (res.ok) {
+        return await res.json()
+      }
+    } catch (e) {
+      console.log(`Hub ${hubUrl} failed:`, e)
+      continue
+    }
+  }
+  return null
+}
 
 // Get user data from hub
 async function getUserData(fid: number): Promise<UserData> {
-  if (userCache.has(fid)) {
-    return userCache.get(fid)!
-  }
-
   try {
-    const [usernameRes, pfpRes] = await Promise.all([
-      fetch(`${HUB_URL}/v1/userDataByFid?fid=${fid}&user_data_type=6`),
-      fetch(`${HUB_URL}/v1/userDataByFid?fid=${fid}&user_data_type=1`),
-    ])
+    const data = await fetchFromHub(`/v1/userDataByFid?fid=${fid}&user_data_type=6`)
+    const pfpData = await fetchFromHub(`/v1/userDataByFid?fid=${fid}&user_data_type=1`)
 
-    const usernameData = usernameRes.ok ? await usernameRes.json() : null
-    const pfpData = pfpRes.ok ? await pfpRes.json() : null
-
-    const userData: UserData = {
-      fid,
-      username: usernameData?.data?.userDataBody?.value || `fid:${fid}`,
-      displayName: usernameData?.data?.userDataBody?.value || `User ${fid}`,
-      pfp: pfpData?.data?.userDataBody?.value || "",
-    }
-
-    userCache.set(fid, userData)
-    return userData
-  } catch {
     return {
       fid,
-      username: `fid:${fid}`,
-      displayName: `User ${fid}`,
-      pfp: "",
+      username: data?.data?.userDataBody?.value || `fid:${fid}`,
+      pfp: pfpData?.data?.userDataBody?.value || "",
     }
+  } catch {
+    return { fid, username: `fid:${fid}`, pfp: "" }
   }
 }
 
 // Get casts from a specific FID
-async function getCastsByFid(fid: number, limit: number = 25): Promise<HubCast[]> {
+async function getCastsByFid(fid: number): Promise<HubCast[]> {
   try {
-    const res = await fetch(`${HUB_URL}/v1/castsByFid?fid=${fid}&pageSize=${limit}&reverse=1`, {
-      next: { revalidate: 30 },
-    })
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.messages || []
-  } catch (e) {
-    console.error(`Error fetching casts for fid ${fid}:`, e)
+    const data = await fetchFromHub(`/v1/castsByFid?fid=${fid}&pageSize=25&reverse=1`)
+    return data?.messages || []
+  } catch {
     return []
   }
 }
 
-// Active FIDs with quality content (verified active users)
+// Verified active FIDs
 const ACTIVE_FIDS = [
-  3, 2, 5, 6, 7, 8, 9, 10, 12, 15, 20, 50, 99, 100,
-  194, 239, 359, 373, 416, 451, 534, 576, 616, 680,
-  1317, 1325, 1356, 2433, 2904, 3115, 3621, 4085,
-  5253, 5650, 6546, 6806, 7143, 7963, 8447, 8685,
-  9152, 10636, 12026, 12142, 15218, 18949, 20396,
+  3, 2, 5, 8, 10, 99, 194, 239, 359, 416,
+  534, 616, 680, 1317, 1325, 2433, 3621,
+  5253, 5650, 6806, 7143, 8685, 12142
 ]
 
 function shuffleArray<T>(array: T[]): T[] {
@@ -96,166 +97,125 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled
 }
 
-function extractImageFromCast(cast: HubCast): string | undefined {
+function extractImage(cast: HubCast): string | undefined {
   const embeds = cast.data.castAddBody?.embeds || []
-  const embedsDeprecated = cast.data.castAddBody?.embedsDeprecated || []
+  const deprecated = cast.data.castAddBody?.embedsDeprecated || []
 
-  for (const embed of embeds) {
-    if (embed.url && /\.(jpg|jpeg|png|gif|webp)/i.test(embed.url)) {
-      return embed.url
-    }
+  for (const e of embeds) {
+    if (e.url && /\.(jpg|jpeg|png|gif|webp)/i.test(e.url)) return e.url
   }
-
-  for (const url of embedsDeprecated) {
-    if (/\.(jpg|jpeg|png|gif|webp)/i.test(url)) {
-      return url
-    }
+  for (const url of deprecated) {
+    if (/\.(jpg|jpeg|png|gif|webp)/i.test(url)) return url
   }
-
   return undefined
 }
 
 function generateTags(text: string): string[] {
   const tags: string[] = []
-  const lowerText = text.toLowerCase()
+  const t = text.toLowerCase()
 
-  if (lowerText.includes("$") || lowerText.includes("crypto") || lowerText.includes("eth") || lowerText.includes("bitcoin")) {
-    tags.push("Crypto")
-  }
-  if (lowerText.includes("art") || lowerText.includes("nft") || lowerText.includes("🎨")) {
-    tags.push("Art")
-  }
-  if (lowerText.includes("dev") || lowerText.includes("code") || lowerText.includes("build") || lowerText.includes("ship")) {
-    tags.push("Dev")
-  }
-  if (lowerText.includes("farcaster") || lowerText.includes("warpcast") || lowerText.includes("fc")) {
-    tags.push("Farcaster")
-  }
-  if (lowerText.includes("gm") || lowerText.includes("good morning")) {
-    tags.push("GM")
-  }
-  if (lowerText.includes("ai") || lowerText.includes("llm") || lowerText.includes("gpt")) {
-    tags.push("AI")
-  }
+  if (t.includes("crypto") || t.includes("eth") || t.includes("$")) tags.push("Crypto")
+  if (t.includes("art") || t.includes("nft")) tags.push("Art")
+  if (t.includes("dev") || t.includes("build") || t.includes("code")) tags.push("Dev")
+  if (t.includes("farcaster") || t.includes("warpcast")) tags.push("Farcaster")
+  if (t.includes("gm")) tags.push("GM")
 
   return tags.slice(0, 3)
 }
 
+// Farcaster epoch starts Jan 1, 2021 00:00:00 UTC
+const FARCASTER_EPOCH = 1609459200
+
 async function fetchRandomCast(excludeHashes: Set<string>): Promise<any> {
-  // Randomly select FIDs
-  const selectedFids = shuffleArray(ACTIVE_FIDS).slice(0, 8)
+  const selectedFids = shuffleArray(ACTIVE_FIDS).slice(0, 5)
 
-  // Fetch casts from selected FIDs in parallel
-  const castsPromises = selectedFids.map((fid) => getCastsByFid(fid, 20))
-  const castsResults = await Promise.all(castsPromises)
+  console.log("Fetching from FIDs:", selectedFids)
 
-  // Flatten all casts
-  const allCasts: HubCast[] = castsResults.flat()
+  const results = await Promise.all(selectedFids.map(fid => getCastsByFid(fid)))
+  const allCasts = results.flat()
 
-  console.log(`Fetched ${allCasts.length} total casts from ${selectedFids.length} FIDs`)
+  console.log(`Total casts fetched: ${allCasts.length}`)
 
-  // Filter casts
-  const validCasts = allCasts.filter((cast) => {
-    // Must have cast body
-    if (!cast.data.castAddBody) return false
+  if (allCasts.length === 0) {
+    console.log("No casts returned from any hub")
+    return null
+  }
 
-    const text = cast.data.castAddBody.text || ""
-
-    // Must have meaningful text
-    if (text.length < 20) return false
-
-    // Skip replies (has parentCastId)
-    if (cast.data.castAddBody.parentCastId) return false
-
-    // Skip already seen
+  // Filter valid casts
+  const validCasts = allCasts.filter(cast => {
+    if (!cast.data?.castAddBody?.text) return false
+    if (cast.data.castAddBody.text.length < 15) return false
     if (excludeHashes.has(cast.hash)) return false
-
+    // Don't filter out replies - we want more content
     return true
   })
 
-  console.log(`${validCasts.length} valid casts after filtering`)
+  console.log(`Valid casts after filter: ${validCasts.length}`)
 
   if (validCasts.length === 0) {
-    // If no root casts, also allow quality replies
-    const replyCasts = allCasts.filter((cast) => {
-      if (!cast.data.castAddBody) return false
-      const text = cast.data.castAddBody.text || ""
-      if (text.length < 30) return false
-      if (excludeHashes.has(cast.hash)) return false
-      return true
-    })
-
-    if (replyCasts.length === 0) {
-      return null
+    // Return any cast if none pass filter
+    if (allCasts.length > 0) {
+      const cast = allCasts[Math.floor(Math.random() * allCasts.length)]
+      if (cast.data?.castAddBody?.text) {
+        const userData = await getUserData(cast.data.fid)
+        return formatCast(cast, userData)
+      }
     }
-
-    // Pick random reply
-    const selected = shuffleArray(replyCasts)[0]
-    const userData = await getUserData(selected.data.fid)
-    const text = selected.data.castAddBody?.text || ""
-
-    return {
-      id: selected.hash,
-      author: {
-        fid: selected.data.fid,
-        handle: userData.username,
-        avatar: userData.pfp,
-      },
-      text,
-      image: extractImageFromCast(selected),
-      uri: `https://warpcast.com/${userData.username}/${selected.hash.slice(0, 10)}`,
-      metrics: {
-        likes: Math.floor(Math.random() * 50) + 5,
-        recasts: Math.floor(Math.random() * 10),
-        replies: Math.floor(Math.random() * 20),
-      },
-      tags: generateTags(text),
-      createdAt: new Date(selected.data.timestamp * 1000).toISOString(),
-    }
+    return null
   }
 
-  // Shuffle and pick one
-  const selected = shuffleArray(validCasts)[0]
+  const selected = validCasts[Math.floor(Math.random() * validCasts.length)]
   const userData = await getUserData(selected.data.fid)
-  const text = selected.data.castAddBody?.text || ""
+
+  return formatCast(selected, userData)
+}
+
+function formatCast(cast: HubCast, userData: UserData) {
+  const text = cast.data.castAddBody?.text || ""
+  const timestamp = cast.data.timestamp
+  // Farcaster timestamp is seconds since Farcaster epoch
+  const date = new Date((FARCASTER_EPOCH + timestamp) * 1000)
 
   return {
-    id: selected.hash,
+    id: cast.hash,
     author: {
-      fid: selected.data.fid,
+      fid: cast.data.fid,
       handle: userData.username,
       avatar: userData.pfp,
     },
     text,
-    image: extractImageFromCast(selected),
-    uri: `https://warpcast.com/${userData.username}/${selected.hash.slice(0, 10)}`,
+    image: extractImage(cast),
+    uri: `https://warpcast.com/${userData.username}/${cast.hash.slice(0, 10)}`,
     metrics: {
-      likes: Math.floor(Math.random() * 100) + 10,
-      recasts: Math.floor(Math.random() * 20),
-      replies: Math.floor(Math.random() * 30),
+      likes: Math.floor(Math.random() * 80) + 10,
+      recasts: Math.floor(Math.random() * 15),
+      replies: Math.floor(Math.random() * 25),
     },
     tags: generateTags(text),
-    createdAt: new Date(selected.data.timestamp * 1000).toISOString(),
+    createdAt: date.toISOString(),
   }
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const excludeParam = searchParams.get("exclude") || ""
-    const excludeHashes = new Set(excludeParam ? excludeParam.split(",") : [])
+    const exclude = searchParams.get("exclude") || ""
+    const excludeHashes = new Set(exclude ? exclude.split(",") : [])
 
     const cast = await fetchRandomCast(excludeHashes)
 
     if (!cast) {
-      return NextResponse.json({ error: "No casts available" }, { status: 404 })
+      return NextResponse.json(
+        { error: "No casts available. Hub might be unreachable." },
+        { status: 503 }
+      )
     }
 
     return NextResponse.json({ cast })
   } catch (error) {
-    console.error("Error fetching casts:", error)
+    console.error("GET Error:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch casts" },
+      { error: String(error) },
       { status: 500 }
     )
   }
@@ -263,20 +223,23 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
+    const body = await request.json().catch(() => ({}))
     const excludeHashes = new Set<string>(body.excludeHashes || [])
 
     const cast = await fetchRandomCast(excludeHashes)
 
     if (!cast) {
-      return NextResponse.json({ error: "No casts available" }, { status: 404 })
+      return NextResponse.json(
+        { error: "No casts available. Hub might be unreachable." },
+        { status: 503 }
+      )
     }
 
     return NextResponse.json({ cast })
   } catch (error) {
-    console.error("Error fetching casts:", error)
+    console.error("POST Error:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch casts" },
+      { error: String(error) },
       { status: 500 }
     )
   }
