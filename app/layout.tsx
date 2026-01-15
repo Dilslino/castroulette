@@ -19,13 +19,35 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "CastRoulette — Discover random quality casts",
   description:
-    "Explore the best Farcaster content with a fun spin system. Get quality casts randomly with re-roll and tip features.",
+    "Explore the best Farcaster content with a fun spin system. Get quality casts randomly with spin and tip features.",
   generator: "v0.app",
   applicationName: "CastRoulette",
+  icons: {
+    icon: [
+      { url: "/logo.png", sizes: "any" },
+      { url: "/logo.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [
+      { url: "/logo.png", sizes: "180x180", type: "image/png" },
+    ],
+    shortcut: "/logo.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "CastRoulette",
+  },
+  openGraph: {
+    title: "CastRoulette — Discover random quality casts",
+    description: "Explore the best Farcaster content with a fun spin system.",
+    images: ["/logo.png"],
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "CastRoulette",
+    description: "Discover random quality casts on Farcaster",
+    images: ["/logo.png"],
   },
   formatDetection: {
     telephone: false,
@@ -34,7 +56,7 @@ export const metadata: Metadata = {
     "fc:frame": "vNext",
     "fc:frame:image": "/api/og",
     "fc:frame:button:1": "SPIN",
-    "fc:frame:button:2": "RE-ROLL",
+    "fc:frame:button:2": "BUY SPINS",
     "fc:frame:button:3": "TIP",
     "fc:frame:button:4": "FOLLOW",
     "fc:frame:post_url": "/api/frame",

@@ -26,14 +26,26 @@ export function MobileHeader({ onMenuOpen }: MobileHeaderProps) {
 
   return (
     <header className="flex items-center justify-between px-4 py-3 bg-card border-b-4 border-black">
-      {/* Menu Button */}
-      <button
-        onClick={onMenuOpen}
-        className="p-2 touch-target active:bg-muted border-2 border-black"
-        aria-label="open menu"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
+      {/* Logo & Menu */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onMenuOpen}
+          className="p-2 touch-target active:bg-muted border-2 border-black"
+          aria-label="open menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="flex items-center gap-2">
+          <img
+            src="/logo.png"
+            alt="CastRoulette"
+            className="w-8 h-8"
+          />
+          <span className="font-mono font-black text-sm tracking-tight hidden sm:inline">
+            CASTROULETTE
+          </span>
+        </div>
+      </div>
 
       {/* User Badge */}
       {isLoading ? (
@@ -122,9 +134,16 @@ export function SideMenu({ isOpen, onClose }: SideMenuProps) {
       <div className="fixed top-0 left-0 bottom-0 w-72 bg-card border-r-4 border-black z-50 flex flex-col animate-in slide-in-from-left duration-200">
         {/* Menu Header */}
         <div className="flex items-center justify-between p-4 border-b-4 border-black bg-primary">
-          <span className="font-mono font-bold text-lg text-primary-foreground">
-            MENU
-          </span>
+          <div className="flex items-center gap-2">
+            <img
+              src="/logo.png"
+              alt="CastRoulette"
+              className="w-7 h-7"
+            />
+            <span className="font-mono font-bold text-lg text-primary-foreground">
+              MENU
+            </span>
+          </div>
           <button
             onClick={onClose}
             className="p-2 active:bg-primary/80 border-2 border-black bg-card"
