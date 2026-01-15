@@ -1,7 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { AppState, Cast, Payment } from "./types"
-import { mockCasts } from "./mock-data"
 
 // Daily reward constants
 const DAILY_BONUS_SPINS = 3
@@ -14,6 +13,7 @@ interface AppStore extends AppState {
   addPayment: (payment: Payment) => void
   setReferralFid: (fid: number) => void
   setLanguage: (lang: "id" | "en") => void
+  addSeenCast: (castId: string) => void
 
   // Daily reward
   lastDailyClaimTime: string | null
@@ -21,12 +21,11 @@ interface AppStore extends AppState {
   canClaimDaily: () => boolean
   getTimeUntilNextClaim: () => { hours: number; minutes: number; seconds: number }
 
-  // Mock API functions (to be replaced with real API calls)
-  getRandomCast: (includeSponsored?: boolean) => Promise<Cast>
+  // API functions
+  getRandomCast: () => Promise<Cast>
   spinFree: () => Promise<void>
-  rerollPaid: (params: { amountUSDC: number; referrer?: number }) => Promise<Cast>
+  purchaseSpins: (amount: number) => void
   tipPaid: (params: { toWallet: string; amountUSDC: number; referrer?: number }) => Promise<void>
-  createSponsor: (params: { uri: string; weight: number; duration: number; priceUSDC: number }) => Promise<void>
   getMetrics: () => Promise<{ totalSpins: number; paidRerolls: number; tipsGiven: number; tipsReceived: number }>
 }
 
@@ -52,6 +51,14 @@ export const useAppStore = create<AppStore>()(
       setReferralFid: (fid) => set({ referralFid: fid }),
       setLanguage: (lang) => set({ language: lang }),
 
+      // Permanently add a cast to seen list
+      addSeenCast: (castId) => {
+        const { seenCastIds } = get()
+        if (!seenCastIds.includes(castId)) {
+          set({ seenCastIds: [...seenCastIds, castId] })
+        }
+      },
+
       // Daily reward functions
       canClaimDaily: () => {
         const { lastDailyClaimTime } = get()
@@ -71,7 +78,7 @@ export const useAppStore = create<AppStore>()(
         set((state) => ({
           user: {
             ...state.user,
-            freeSpinsRemaining: state.user.freeSpinsRemaining + DAILY_BONUS_SPINS,
+            freeSpinsRemaining: (state.user.freeSpinsRemaining || 0) + DAILY_BONUS_SPINS,
           },
           lastDailyClaimTime: new Date().toISOString(),
         }))
@@ -95,87 +102,86 @@ export const useAppStore = create<AppStore>()(
         return { hours, minutes, seconds }
       },
 
-      // Mock API functions
-      getRandomCast: async (includeSponsored = true) => {
-        await new Promise((resolve) => setTimeout(resolve, 300))
+      // Fetch random cast from Neynar API
+      getRandomCast: async () => {
+        const { seenCastIds, addSeenCast } = get()
 
-        // Filter by sponsorship and minimum likes
-        const pool = (includeSponsored ? mockCasts : mockCasts.filter((c) => !c.sponsored)).filter(
-          (c) => c.metrics.likes >= 20,
-        )
+        try {
+          // Call our API endpoint with seen cast IDs
+          const response = await fetch("/api/casts", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              excludeHashes: seenCastIds,
+            }),
+          })
 
-        // Sort by best: likes desc, then newest
-        const sorted = [...pool].sort((a, b) => {
-          if (b.metrics.likes !== a.metrics.likes) return b.metrics.likes - a.metrics.likes
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        })
+          if (!response.ok) {
+            const error = await response.json()
+            throw new Error(error.error || "Failed to fetch cast")
+          }
 
-        const { seenCastIds } = get()
-        const seen = new Set(seenCastIds)
+          const data = await response.json()
+          const cast: Cast = {
+            id: data.cast.id,
+            author: {
+              fid: data.cast.author.fid,
+              handle: data.cast.author.handle,
+              avatar: data.cast.author.avatar,
+            },
+            text: data.cast.text,
+            image: data.cast.image,
+            uri: data.cast.uri,
+            metrics: data.cast.metrics,
+            tags: data.cast.tags,
+            createdAt: data.cast.createdAt,
+          }
 
-        // Find the first unseen cast
-        let chosen = sorted.find((c) => !seen.has(c.id))
+          // Permanently mark as seen
+          addSeenCast(cast.id)
 
-        // If all seen, reset and pick the top again
-        if (!chosen) {
-          set({ seenCastIds: [] })
-          chosen = sorted[0]
+          return cast
+        } catch (error) {
+          console.error("Error fetching cast:", error)
+          throw error
         }
-
-        // Mark as seen
-        if (chosen && !seen.has(chosen.id)) {
-          set((state) => ({ seenCastIds: [...state.seenCastIds, chosen!.id] }))
-        }
-
-        // Fallback if somehow no cast available
-        return chosen ?? sorted[0] ?? pool[0]
       },
 
       spinFree: async () => {
         const { user } = get()
-        if (user.freeSpinsRemaining <= 0) {
-          throw new Error("No free spins remaining")
+        const totalSpins = (user.freeSpinsRemaining || 0) + (user.purchasedSpins || 0)
+
+        if (totalSpins <= 0) {
+          throw new Error("No spins remaining")
         }
 
+        // Use free spins first, then purchased
+        if ((user.freeSpinsRemaining || 0) > 0) {
+          set((state) => ({
+            user: {
+              ...state.user,
+              freeSpinsRemaining: (state.user.freeSpinsRemaining || 0) - 1,
+            },
+          }))
+        } else if ((user.purchasedSpins || 0) > 0) {
+          set((state) => ({
+            user: {
+              ...state.user,
+              purchasedSpins: (state.user.purchasedSpins || 0) - 1,
+            },
+          }))
+        }
+      },
+
+      purchaseSpins: (amount: number) => {
         set((state) => ({
           user: {
             ...state.user,
-            freeSpinsRemaining: state.user.freeSpinsRemaining - 1,
+            purchasedSpins: (state.user.purchasedSpins || 0) + amount,
           },
         }))
-      },
-
-      rerollPaid: async ({ amountUSDC, referrer }) => {
-        // Simulate payment processing
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-
-        // Mock payment success (90% success rate)
-        if (Math.random() < 0.9) {
-          const payment: Payment = {
-            id: Date.now().toString(),
-            type: "reroll",
-            amount: amountUSDC,
-            status: "success",
-            txHash: `0x${Math.random().toString(16).substr(2, 8)}...${Math.random().toString(16).substr(2, 4)}`,
-            date: new Date().toISOString(),
-            description: "Re-roll untuk cast baru",
-          }
-
-          get().addPayment(payment)
-          return get().getRandomCast(true)
-        } else {
-          const payment: Payment = {
-            id: Date.now().toString(),
-            type: "reroll",
-            amount: amountUSDC,
-            status: "failed",
-            date: new Date().toISOString(),
-            description: "Re-roll gagal - insufficient balance",
-          }
-
-          get().addPayment(payment)
-          throw new Error("Payment failed")
-        }
       },
 
       tipPaid: async ({ toWallet, amountUSDC, referrer }) => {
@@ -200,32 +206,14 @@ export const useAppStore = create<AppStore>()(
         }
       },
 
-      createSponsor: async ({ uri, weight, duration, priceUSDC }) => {
-        // Simulate payment processing
-        await new Promise((resolve) => setTimeout(resolve, 1500))
-
-        const payment: Payment = {
-          id: Date.now().toString(),
-          type: "sponsor",
-          amount: priceUSDC,
-          status: "success",
-          txHash: `0x${Math.random().toString(16).substr(2, 8)}...${Math.random().toString(16).substr(2, 4)}`,
-          date: new Date().toISOString(),
-          description: `Slot sponsor ${duration} jam`,
-        }
-
-        get().addPayment(payment)
-      },
-
       getMetrics: async () => {
-        // Simulate API delay
         await new Promise((resolve) => setTimeout(resolve, 300))
 
-        const payments = get().payments
-        const totalSpins = 47 // Mock total
+        const { payments, seenCastIds } = get()
+        const totalSpins = seenCastIds.length
         const paidRerolls = payments.filter((p) => p.type === "reroll" && p.status === "success").length
         const tipsGiven = payments.filter((p) => p.type === "tip" && p.status === "success").length
-        const tipsReceived = 3 // Mock received tips
+        const tipsReceived = 0
 
         return { totalSpins, paidRerolls, tipsGiven, tipsReceived }
       },

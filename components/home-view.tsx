@@ -16,6 +16,10 @@ export function HomeView({ onStartSpin }: HomeViewProps) {
   const [timeUntilClaim, setTimeUntilClaim] = useState({ hours: 0, minutes: 0, seconds: 0 })
 
   const displayName = farcasterUser?.displayName || farcasterUser?.username || "friend"
+
+  const totalSpins = (appUser.freeSpinsRemaining || 0) + (appUser.purchasedSpins || 0)
+  const freeSpins = appUser.freeSpinsRemaining || 0
+  const paidSpins = appUser.purchasedSpins || 0
   const canClaim = canClaimDaily()
 
   // Update countdown timer
@@ -85,18 +89,18 @@ export function HomeView({ onStartSpin }: HomeViewProps) {
               <p className="font-mono text-xs text-foreground/60">
                 spins available
               </p>
-              <p className="font-mono font-bold text-2xl">{appUser.freeSpinsRemaining + appUser.purchasedSpins}</p>
+              <p className="font-mono font-bold text-2xl">{totalSpins}</p>
             </div>
           </div>
           <div className="text-right">
             <div className="flex flex-col gap-1">
               <span className="font-mono text-[10px] text-foreground/50 flex items-center gap-1 justify-end">
                 <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                free: {appUser.freeSpinsRemaining}
+                free: {freeSpins}
               </span>
               <span className="font-mono text-[10px] text-foreground/50 flex items-center gap-1 justify-end">
                 <span className="w-2 h-2 rounded-full bg-primary"></span>
-                purchased: {appUser.purchasedSpins}
+                purchased: {paidSpins}
               </span>
             </div>
           </div>
@@ -106,15 +110,15 @@ export function HomeView({ onStartSpin }: HomeViewProps) {
         <div className="w-full h-3 bg-muted border-2 border-black mb-2 overflow-hidden flex">
           <div
             className="h-full bg-green-500 transition-all duration-300"
-            style={{ width: `${(appUser.freeSpinsRemaining / (appUser.freeSpinsRemaining + appUser.purchasedSpins + 1)) * 100}%` }}
+            style={{ width: `${totalSpins > 0 ? (freeSpins / totalSpins) * 100 : 0}%` }}
           />
           <div
             className="h-full bg-primary transition-all duration-300"
-            style={{ width: `${(appUser.purchasedSpins / (appUser.freeSpinsRemaining + appUser.purchasedSpins + 1)) * 100}%` }}
+            style={{ width: `${totalSpins > 0 ? (paidSpins / totalSpins) * 100 : 0}%` }}
           />
         </div>
         <p className="font-mono text-[10px] text-foreground/50 text-center">
-          {appUser.freeSpinsRemaining + appUser.purchasedSpins} total spins ready
+          {totalSpins} total spins ready
         </p>
       </div>
 
